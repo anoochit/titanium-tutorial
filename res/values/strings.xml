@@ -1,11 +1,11 @@
  <resources>
 
-    <string name="app_name">Titanium Video Tutorial</string>
+    <string name="app_name">Titanium Tutorial</string>
     <string name="hello_world">Hello world!</string>
     <string name="menu_update">Update</string>
-    <string name="title_activity_main">Titanium Video Tutorial</string>
+    <string name="title_activity_main">Titanium Tutorial</string>
     <string name="menu_share">Share...</string>
-    <string name="text_share_subject">Video Tutorial</string>
-    <string name="text_share_body">Best video tutorial from https://play.google.com/store/apps/details?id=</string>
+    <string name="text_share_subject">Titanium Tutorial</string>
+    <string name="text_share_body">Titanium Tutorial https://play.google.com/store/apps/details?id=</string>
 
 </resources>

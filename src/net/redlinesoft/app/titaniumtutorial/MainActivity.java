@@ -1,32 +1,49 @@
 package net.redlinesoft.app.titaniumtutorial;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
- 
+
 import net.redlinesoft.app.titaniumtutorial.R;
 
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.StatusLine;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import org.json.JSONException;
 
 import com.google.ads.*;
 
 import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.StrictMode;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -47,259 +64,150 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.AdapterView.OnItemClickListener;
+import android.widget.RelativeLayout;
+import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
 	private AdView adView;
-	public static final int DIALOG_DOWNLOAD_PROGRESS = 0;
-	private ProgressDialog mProgressDialog;
-	String feedurl = "http://query.yahooapis.com/v1/public/yql?q=select%20title%2Clink%20from%20feed%20where%20url%3D%22https%3A%2F%2Fgdata.youtube.com%2Ffeeds%2Fapi%2Fplaylists%2F9CC79690BA88A69D%3Fv%3D2%22%20%20and%20link.rel%3D%22alternate%22";
+
+	String url = "http://query.yahooapis.com/v1/public/yql?q=select%20title%2Clink%20from%20feed%20where%20url%3D%22https%3A%2F%2Fgdata.youtube.com%2Ffeeds%2Fapi%2Fplaylists%2F9CC79690BA88A69D%3Fv%3D2%26max-results%3D50%22%20and%20link.rel%3D%22alternate%22&format=json&callback=";
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 
-		 
-		// load admob
-		// Create the adView
-		adView = new AdView(this, AdSize.BANNER, "a1509453271895b");
-		// Lookup your LinearLayout assuming it’s been given
-		// the attribute android:id="@+id/mainLayout"
-		LinearLayout layout = (LinearLayout) findViewById(R.id.mainLayout);
-		// Add the adView to it
-		layout.addView(adView);
-		// Initiate a generic request to load it with an ad
-		adView.loadAd(new AdRequest());
- 
-		// initial database handler
-		final DatabaseHandler myDb = new DatabaseHandler(this);
-		myDb.getWritableDatabase();
-		// check data exist ?
-		checkItemExist();
-
-		myDb.close();
-
-	}
-
-	private void checkItemExist() {
-		// TODO Auto-generated method stub
-		final DatabaseHandler myDb = new DatabaseHandler(this);
-		// TODO Auto-generated method stub
-		if (myDb.getTotalRow() <= 0) {
-			Log.d("DB", "no episode data, should update from internet");
-			// asking for update data from internet
-			final AlertDialog.Builder dDialog = new AlertDialog.Builder(this);
-			dDialog.setTitle("Update");
-			dDialog.setMessage("Update data, please connect to Internet.");
-			dDialog.setPositiveButton("Yes", new AlertDialog.OnClickListener() {
-				public void onClick(DialogInterface dialog, int arg1) {
-					Log.d("DB", "update episode data from internet");
-					// load episode data and items form internet
-					startDownload();
-					parseContent();
-					loadContent();
-				}
-			});
-			dDialog.show();
-		} else {
-			loadContent();
+		// break policy
+		if (android.os.Build.VERSION.SDK_INT > 9) {
+			StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder()
+					.permitAll().build();
+			StrictMode.setThreadPolicy(policy);
 		}
-		myDb.close();
-	}
 
-	private void loadContent() {
-		// put data to list
-		final DatabaseHandler myDb = new DatabaseHandler(this);
+		ProgressDialog progress = ProgressDialog.show(this, null, "loading...",
+				false);
 
-		final String[][] myData = myDb.SelectAllData();
+		// get xml data form yql
+		if (checkNetworkStatus()) {
 
-		ListView listItem = (ListView) findViewById(R.id.listItem);
+			// Create the adView
+			adView = new AdView(this, AdSize.SMART_BANNER, "a1509453271895b");
+			// Lookup your LinearLayout assuming it’s been given
+			// the attribute android:id="@+id/mainLayout"
+			LinearLayout layout = (LinearLayout) findViewById(R.id.mainLayout);
+			// Add the adView to it
+			layout.addView(adView);
+			// Initiate a generic request to load it with an ad
+			adView.loadAd(new AdRequest());
 
-		// Getting adapter by passing xml data ArrayList
-		LazyAdapter adapter = new LazyAdapter(this, myData);
-		listItem.setAdapter(adapter);
-
-		// OnClick Item
-		listItem.setOnItemClickListener(new OnItemClickListener() {
-			public void onItemClick(AdapterView<?> myAdapter, View myView,
-					int position, long mylng) {
-				String strLocation = myData[position][3];
-				// String strLocation =
-				// myData.getString(myData.getColumnIndex("location"));
-				// Toast.makeText(getApplicationContext(),"Selected  " +
-				// strLocation, Toast.LENGTH_SHORT).show();
-				// intent to youtube page
-				Intent fanPageIntent = new Intent(Intent.ACTION_VIEW);
-				fanPageIntent.setType("text/url");
-				fanPageIntent.setData(Uri.parse(strLocation));
-				startActivity(fanPageIntent);
-			}
-		});
-
-		myDb.close();
-
-	}
-
-	private void startDownload() {
-		new DownloadFileAsync().execute(feedurl);
-	}
-
-	class DownloadFileAsync extends AsyncTask<String, String, String> {
-
-		@Override
-		protected String doInBackground(String... aurl) {
-			int count;
-			Log.d("DOWNLOAD", feedurl);
+			// load json data
 			try {
+				JSONObject json_data = new JSONObject(getJSONUrl(url));
+				JSONObject json_query = json_data.getJSONObject("query");
+				JSONObject json_result = json_query.getJSONObject("results");
+				JSONArray json_entry = json_result.getJSONArray("entry");
+				Log.d("JSON", String.valueOf(json_entry.length()));
 
-				URL url = new URL(aurl[0]);
-				URLConnection conexion = url.openConnection();
-				conexion.connect();
+				final ArrayList<HashMap<String, String>> MyArrList = new ArrayList<HashMap<String, String>>();
+				HashMap<String, String> map;
 
-				int lenghtOfFile = conexion.getContentLength();
-				Log.d("DOWNLOAD", "Lenght of file: " + lenghtOfFile);
+				for (int i = 0; i < json_entry.length(); i++) {
 
-				InputStream input = new BufferedInputStream(url.openStream());
+					// parse json
+					JSONObject c = json_entry.getJSONObject(i);
+					Log.d("JSON", c.getString("title").toString());
+					Log.d("JSON", c.getJSONObject("link").getString("href")
+							.toString());
+					String link = c.getJSONObject("link").getString("href")
+							.toString();
+					String[] fragments = link.split("&");
+					String[] videoid = fragments[0].split("=");
+					Log.d("JSON", videoid[1]);
 
-				// Get File Name from URL
-				// String fileName = URLDownload.substring(
-				// URLDownload.lastIndexOf('/')+1, URLDownload.length() );
+					// put into hashmap
+					map = new HashMap<String, String>();
+					map.put("title", c.getString("title"));
+					map.put("link", c.getJSONObject("link").getString("href"));
+					map.put("videoid", videoid[1]);
+					MyArrList.add(map);
 
-				OutputStream output = new FileOutputStream(Environment
-						.getExternalStorageDirectory().getPath()
-						+ "/playlist.xml");
-
-				Log.d("FILE", Environment.getExternalStorageDirectory()
-						.getPath() + "/playlist.xml");
-
-				byte data[] = new byte[1024];
-
-				long total = 0;
-
-				while ((count = input.read(data)) != -1) {
-					total += count;
-					publishProgress("" + (int) ((total * 100) / lenghtOfFile));
-					output.write(data, 0, count);
 				}
 
-				output.flush();
-				output.close();
-				input.close();
+				ListView listItem = (ListView) findViewById(R.id.listItem);
+				LazyAdapter adapter = new LazyAdapter(this, MyArrList);
+				listItem.setAdapter(adapter);
 
-			} catch (Exception e) {
-				Log.d("DOWNLOAD", "Error download file");
+				progress.dismiss();
+
+				// OnClick Item
+				listItem.setOnItemClickListener(new OnItemClickListener() {
+
+					@Override
+					public void onItemClick(AdapterView<?> arg0, View arg1,
+							int arg2, long arg3) {
+						// TODO Auto-generated method stub 
+						Intent fanPageIntent = new Intent(Intent.ACTION_VIEW);
+						fanPageIntent.setType("text/url");
+						fanPageIntent.setData(Uri.parse(MyArrList.get(arg2).get("link")));
+						startActivity(fanPageIntent);
+					}
+				});
+
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				Toast.makeText(getBaseContext(), "cannot load data !",
+						Toast.LENGTH_SHORT).show();
+				progress.dismiss();
 			}
 
-			return null;
-
-		}
-
-		protected void onProgressUpdate(String... progress) {
-			// Log.d("DOWNLOAD", progress[0]);
-			mProgressDialog.setProgress(Integer.parseInt(progress[0]));
-		}
-
-		@SuppressWarnings("deprecation")
-		protected void onPostExecute(String unused) {
-			dismissDialog(DIALOG_DOWNLOAD_PROGRESS);
-			removeDialog(DIALOG_DOWNLOAD_PROGRESS);
-		}
-
-		@SuppressWarnings("deprecation")
-		protected void onPreExecute() {
-			super.onPreExecute();
-			showDialog(DIALOG_DOWNLOAD_PROGRESS);
+		} else {
+			Toast.makeText(getBaseContext(), "No network connection!",
+					Toast.LENGTH_SHORT).show();
+			progress.dismiss();
 		}
 
 	}
 
-	@Override
-	protected Dialog onCreateDialog(int id) {
-		switch (id) {
-		case DIALOG_DOWNLOAD_PROGRESS:
-			mProgressDialog = new ProgressDialog(this);
-			mProgressDialog.setMessage("Downloading...");
-			mProgressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
-			mProgressDialog.setCancelable(false);
-			mProgressDialog.show();
-			return mProgressDialog;
-		default:
-			return null;
-		}
-	}
-
-	private void parseContent() {
-		// TODO Auto-generated method stub
-		final DatabaseHandler myDb = new DatabaseHandler(this);
+	public String getJSONUrl(String url) {
+		StringBuilder str = new StringBuilder();
+		HttpClient client = new DefaultHttpClient();
+		HttpGet httpGet = new HttpGet(url);
 		try {
-
-			File fXmlFile = new File(Environment.getExternalStorageDirectory()
-					.getPath() + "/playlist.xml");
-			DocumentBuilderFactory dbFactory = DocumentBuilderFactory
-					.newInstance();
-			DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
-			Document doc = dBuilder.parse(fXmlFile);
-			doc.getDocumentElement().normalize();
-
-			Log.d("XML", doc.getDocumentElement().getNodeName());
-			NodeList nList = doc.getElementsByTagName("entry");
-
-			Log.d("XML", String.valueOf(nList.getLength()));
-
-			// Integer epidId = 0;
-
-			for (int temp = 0; temp < nList.getLength(); temp++) {
-				Node nNode = nList.item(temp);
-				// Log.d("XML",nNode.getChildNodes().item(0).getTextContent());
-				Log.d("XML", nNode.getChildNodes().item(1).getAttributes()
-						.item(0).getNodeValue());
-				// get title
-				String strTitle = nNode.getChildNodes().item(0)
-						.getTextContent();
-				// get video link
-				String strLink = nNode.getChildNodes().item(1).getAttributes()
-						.item(0).getNodeValue();
-				// get video id = videoid[1]
-				String[] fragments = strLink.split("&");
-				String[] vedioID = fragments[0].split("=");
-				// Log.d("XML", "video id =" + vedioID[1]);
-
-				// save to db
-				myDb.InsertItem((temp + 1), strTitle, vedioID[1], strLink);
-
+			HttpResponse response = client.execute(httpGet);
+			StatusLine statusLine = response.getStatusLine();
+			int statusCode = statusLine.getStatusCode();
+			if (statusCode == 200) { // Download OK
+				HttpEntity entity = response.getEntity();
+				InputStream content = entity.getContent();
+				BufferedReader reader = new BufferedReader(
+						new InputStreamReader(content));
+				String line;
+				while ((line = reader.readLine()) != null) {
+					str.append(line);
+				}
+			} else {
+				Log.e("Log", "Failed to download file..");
 			}
-			myDb.close();
-
-		} catch (Exception e) {
-
-			Log.d("XML", e.getMessage());
+		} catch (ClientProtocolException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
-
+		return str.toString();
 	}
 
 	public boolean checkNetworkStatus() {
-		final ConnectivityManager connMgr = (ConnectivityManager) this
-				.getSystemService(Context.CONNECTIVITY_SERVICE);
-		final android.net.NetworkInfo wifi = connMgr
-				.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
-		final android.net.NetworkInfo mobile = connMgr
-				.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
-		if (wifi.isAvailable()) {
-			Log.d("Network", "Connect via Wifi");
-			return true;
-		} else if (mobile.isAvailable()) {
-			Log.d("Network", "Connect via Mobile network");
-			return true;
-		} else {
-			Log.d("Network", "No network connection");
-			return false;
-		}
+		ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+		NetworkInfo activeNetworkInfo = connectivityManager
+				.getActiveNetworkInfo();
+		return activeNetworkInfo != null;
 	}
-	
+
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item) {
-		
+
 		switch (item.getItemId()) {
 		case R.id.menu_share:
 			Log.d("MENU", "select menu share");
@@ -309,52 +217,18 @@ public class MainActivity extends Activity {
 			sharingIntent.putExtra(android.content.Intent.EXTRA_SUBJECT,
 					getString(R.string.text_share_subject));
 			sharingIntent.putExtra(android.content.Intent.EXTRA_TEXT,
-					getString(R.string.text_share_body)+getApplicationContext().getPackageName());
-			//startActivity(Intent.createChooser(sharingIntent,getString(R.string.menu_share)));
+					getString(R.string.text_share_body)
+							+ getApplicationContext().getPackageName());
+			startActivity(Intent.createChooser(sharingIntent,
+					getString(R.string.menu_share)));
 			startActivity(sharingIntent);
 			break;
 		case R.id.menu_update:
 			Log.d("MENU", "select menu update");
-			// ask for update
-			final DatabaseHandler myDb = new DatabaseHandler(this);
-			final AlertDialog.Builder adb = new AlertDialog.Builder(this);
-			adb.setTitle("Update");
-			adb.setMessage("Do you want to update data?");
-			adb.setPositiveButton("Yes",
-					new AlertDialog.OnClickListener() {
-						public void onClick(DialogInterface dialog, int arg1) {							
-							// check network connection
-							if (checkNetworkStatus()) {
-								Log.d("Network", "Has network connection");
-								// clean table initial new update
-								DatabaseHandler myDb = new DatabaseHandler(
-										MainActivity.this);
-								myDb.deleteTableData();
-								// intent update database
-								Log.d("DB", "update data from internet");
-								// load episode data and items form internet
-								startDownload();
-								parseContent();
-								loadContent();			
-							} else {
-								final AlertDialog.Builder alertAdb = new AlertDialog.Builder(
-										MainActivity.this);
-								alertAdb.setTitle("Error");
-								alertAdb.setMessage("No internet connection, please connect to internet before update.");
-								alertAdb.setNegativeButton("OK",
-										null);
-								alertAdb.show();
-								Log.d("Network", "No network connection");
-							}
-						}
-					});
-			adb.setNegativeButton("No", null);
-			adb.show();
-			myDb.close();
 			break;
 		}
 		return false;
-		
+
 	}
 
 	@Override
